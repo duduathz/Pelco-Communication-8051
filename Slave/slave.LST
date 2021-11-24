@@ -1,0 +1,285 @@
+C51 COMPILER V9.01   SLAVE                                                                 11/17/2020 19:57:11 PAGE 1   
+
+
+C51 COMPILER V9.01, COMPILATION OF MODULE SLAVE
+OBJECT MODULE PLACED IN slave.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE slave.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          #include <reg51.h>
+   2          sbit RS485en=P3^2;        //pin-i per RS485(DE-RE)
+   3          #define Stepper_Port P2 //porti per step motorin per pan
+   4          #define Stepper_Port2 P1//per tilt
+   5          unsigned char rxdata; // variabla per pranim te te dhenav
+   6          int i;
+   7          int z = 0;
+   8          int data_count=0;
+   9          bit PR_flag,PL_flag,TU_flag,TD_flag;//flag-at per pan dhe tilt
+  10          #define frame_Size 7 //madhesia e frame
+  11          //te dhenat per analizimin e frame
+  12          
+  13          unsigned char tiltup = 0x08; //byte per tilt up
+  14          unsigned char panleft = 0x04; //         pan left
+  15          unsigned char tiltdown = 0x10; //        tilt down
+  16          unsigned char panright = 0x02; //        pan right
+  17          unsigned char     stop = 0x00;
+  18          unsigned char PelcoFrame[frame_Size];
+  19          unsigned char   syncByte=0xFF;  //byte per sinkronizim
+  20          
+  21          unsigned char camAddress = 0x01;
+  22          
+  23          unsigned int period,period2; // perioda e delay
+  24          int sum,i;
+  25          //funk. per llogaritje te checksum
+  26          unsigned char checksum();
+  27          void clear_frame();
+  28          void delay(unsigned int count);
+  29          //Inicializimi i portit serik
+  30          void SerialInit()
+  31          {
+  32   1      TMOD=0x20; // zgjedhja e Timer 1, ne modin 8bit auto reload.
+  33   1      TH1=0xFD; // vendosja e baud rate = 9600
+  34   1      SCON=0x50; // vendosja e 8bit Control reg i cili kontrollon SBUF me RC5, 8 bit data, 1 stop bit , 1 start 
+             -bit
+  35   1      TR1=1; // startimi i timerit
+  36   1      EA  = 1;// Enable global interrupt 
+  37   1      ES = 1; // Enable serial interrupt              
+  38   1      }
+  39          
+  40          void Serial_ISR() interrupt 4    
+  41          {
+  42   1      if(RI)
+  43   1      {
+  44   2      rxdata=SBUF;//pranimi i te dhenave nga regjistri SBUF
+  45   2      RI=0;
+  46   2      //analizimi i te dhenave
+  47   2      if(data_count==0)
+  48   2      {
+  49   3      if(rxdata==syncByte)    //frame i ri
+  50   3      {
+  51   4      PelcoFrame[data_count++]=rxdata ;
+  52   4      }
+  53   3      }
+  54   2      else
+C51 COMPILER V9.01   SLAVE                                                                 11/17/2020 19:57:11 PAGE 2   
+
+  55   2      {
+  56   3              PelcoFrame[data_count++]=rxdata;
+  57   3              if(data_count>=frame_Size)
+  58   3              {
+  59   4                      if((PelcoFrame[data_count-1] == checksum())&&(PelcoFrame[data_count-6] == camAddress))
+  60   4                      {
+  61   5                      // shpejtesia e ndrrimit te hapave te step motorit per pan
+  62   5                         if(PelcoFrame[data_count-3]<=0x20)
+  63   5                     {
+  64   6                               period=10;             //medium speed
+  65   6                         }
+  66   5                         if((PelcoFrame[data_count-3]>0x20)&&(PelcoFrame[data_count-3]<=0x3F))
+  67   5                         {
+  68   6                               period=5;         //high speed
+  69   6                         }
+  70   5                         if(PelcoFrame[data_count-3]>0x3F)
+  71   5                         {
+  72   6                               period=3;         //full speed
+  73   6                         }
+  74   5              // shpejtesia e ndrrimit te hapave te step motorit per tilt
+  75   5                         if(PelcoFrame[data_count-2]<=0x20)
+  76   5                     {
+  77   6                               period2=10;            //medium speed
+  78   6                         }
+  79   5                         if((PelcoFrame[data_count-2]>0x20)&&(PelcoFrame[data_count-3]<=0x3F))
+  80   5                         {
+  81   6                               period2=5;        //high speed
+  82   6                         }
+  83   5                         if(PelcoFrame[data_count-2]>0x3F)
+  84   5                         {
+  85   6                               period2=3;        //full speed
+  86   6                         }
+  87   5                      //ngasja e step motorit per pan  
+  88   5                         if(PelcoFrame[data_count-4]==panright)
+  89   5                         {            
+  90   6                                      PR_flag=1;
+  91   6                                      PL_flag=0;
+  92   6                                      TU_flag=0;
+  93   6                                      TD_flag=0;
+  94   6                         }
+  95   5                         if(PelcoFrame[data_count-4]==panleft)
+  96   5                               {
+  97   6                                      PR_flag=0;
+  98   6                                      PL_flag=1;
+  99   6                                      TU_flag=0;
+ 100   6                                      TD_flag=0;
+ 101   6                               }
+ 102   5                        //ngasja e step motorit per tilt
+ 103   5                              if(PelcoFrame[data_count-4]==tiltup)
+ 104   5                               {
+ 105   6                                      TU_flag=1;
+ 106   6                                      TD_flag=0;
+ 107   6                                      PR_flag=0;
+ 108   6                                      PL_flag=0;
+ 109   6                              }
+ 110   5                              if(PelcoFrame[data_count-4]==tiltdown)
+ 111   5                              {
+ 112   6                                      TU_flag=0;
+ 113   6                                      TD_flag=1;
+ 114   6                                      PR_flag=0;
+ 115   6                                      PL_flag=0;
+ 116   6                              }
+C51 COMPILER V9.01   SLAVE                                                                 11/17/2020 19:57:11 PAGE 3   
+
+ 117   5      
+ 118   5                              if((PelcoFrame[data_count-5]==stop)&&(PelcoFrame[data_count-4]==stop)&&(PelcoFrame[data_count-3]==stop)
+             -&&(PelcoFrame[data_count-2]==stop))
+ 119   5                               {
+ 120   6                                      PR_flag=0;
+ 121   6                                      PL_flag=0;
+ 122   6                                      TU_flag=0;
+ 123   6                                      TD_flag=0;
+ 124   6                               }
+ 125   5      
+ 126   5                      }
+ 127   4      
+ 128   4          }
+ 129   3      }                       
+ 130   2      }
+ 131   1      if(data_count==frame_Size)      //bad frame size
+ 132   1      {
+ 133   2                 clear_frame();
+ 134   2      }
+ 135   1      
+ 136   1      }
+ 137          
+ 138          
+ 139          void main()
+ 140          {
+ 141   1      
+ 142   1      SerialInit();
+ 143   1      clear_frame();
+ 144   1      RS485en=0;
+ 145   1      while(1){
+ 146   2      if(PR_flag==1)
+ 147   2      {
+ 148   3                          Stepper_Port = 0x08;
+ 149   3                              delay(period);
+ 150   3                              Stepper_Port = 0x0C;
+ 151   3                              delay(period);
+ 152   3                              Stepper_Port = 0x04;
+ 153   3                              delay(period);
+ 154   3                              Stepper_Port = 0x06;
+ 155   3                              delay(period);
+ 156   3                              Stepper_Port = 0x02;
+ 157   3                              delay(period);
+ 158   3                              Stepper_Port = 0x03;
+ 159   3                              delay(period);
+ 160   3                              Stepper_Port = 0x01;
+ 161   3                              delay(period);
+ 162   3                              Stepper_Port = 0x09;
+ 163   3                              delay(period);
+ 164   3      }
+ 165   2      if(PL_flag==1)
+ 166   2      {
+ 167   3                              Stepper_Port = 0x01;
+ 168   3                              delay(period);
+ 169   3                              Stepper_Port = 0x03;
+ 170   3                              delay(period);
+ 171   3                              Stepper_Port = 0x02;
+ 172   3                              delay(period);
+ 173   3                              Stepper_Port = 0x06;
+ 174   3                              delay(period);
+ 175   3                              Stepper_Port = 0x04;
+ 176   3                              delay(period);
+ 177   3                              Stepper_Port = 0x0C;
+C51 COMPILER V9.01   SLAVE                                                                 11/17/2020 19:57:11 PAGE 4   
+
+ 178   3                              delay(period);
+ 179   3                              Stepper_Port = 0x08;
+ 180   3                              delay(period);
+ 181   3                              Stepper_Port = 0x09;
+ 182   3                              delay(period);
+ 183   3      }
+ 184   2      if(TU_flag==1)
+ 185   2      {
+ 186   3                              Stepper_Port2 = 0x08;
+ 187   3                              delay(period2);
+ 188   3                              Stepper_Port2 = 0x0C;
+ 189   3                              delay(period2);
+ 190   3                              Stepper_Port2 = 0x04;
+ 191   3                              delay(period2);
+ 192   3                              Stepper_Port2 = 0x06;
+ 193   3                              delay(period2);
+ 194   3                              Stepper_Port2 = 0x02;
+ 195   3                              delay(period2);
+ 196   3                              Stepper_Port2 = 0x03;
+ 197   3                              delay(period2);
+ 198   3                              Stepper_Port2 = 0x01;
+ 199   3                              delay(period2);
+ 200   3                              Stepper_Port2 = 0x09;
+ 201   3                              delay(period2);
+ 202   3      }        
+ 203   2      if(TD_flag==1)
+ 204   2      {
+ 205   3                              Stepper_Port2 = 0x01;
+ 206   3                              delay(period2);
+ 207   3                              Stepper_Port2 = 0x03;
+ 208   3                              delay(period2);
+ 209   3                              Stepper_Port2 = 0x02;
+ 210   3                              delay(period2);
+ 211   3                              Stepper_Port2 = 0x06;
+ 212   3                              delay(period2);
+ 213   3                              Stepper_Port2 = 0x04;
+ 214   3                              delay(period2);
+ 215   3                              Stepper_Port2 = 0x0C;
+ 216   3                              delay(period2);
+ 217   3                              Stepper_Port2 = 0x08;
+ 218   3                              delay(period2);
+ 219   3                              Stepper_Port2 = 0x09;
+ 220   3                              delay(period2);
+ 221   3      }
+ 222   2      }
+ 223   1      
+ 224   1      }
+ 225          //funksioni per llogaritje te checksum
+ 226          unsigned char checksum()
+ 227          {
+ 228   1              sum=0;
+ 229   1              for(i=5;i>=1;i--)
+ 230   1              {
+ 231   2                       sum=sum+PelcoFrame[i];
+ 232   2              }
+ 233   1              return sum%0x100;
+ 234   1      
+ 235   1      }
+ 236          //funksioni per te fshire frame i cili ka gabim
+ 237          void clear_frame()
+ 238          {    
+ 239   1          unsigned char i = 0;
+C51 COMPILER V9.01   SLAVE                                                                 11/17/2020 19:57:11 PAGE 5   
+
+ 240   1          data_count = 0;
+ 241   1          for ( i = 0; i < frame_Size; i++ )
+ 242   1          {
+ 243   2              PelcoFrame[i] = 0;
+ 244   2          }
+ 245   1      }
+ 246          //funksioni per delay
+ 247          void delay(unsigned int count)
+ 248          {
+ 249   1          int i,j;
+ 250   1          for(i=0; i<count; i++)
+ 251   1              for(j=0; j<1275; j++); //1ms
+ 252   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    774    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     27    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      4    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

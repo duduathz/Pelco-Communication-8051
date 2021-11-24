@@ -1,0 +1,142 @@
+C51 COMPILER V9.01   MASTER                                                                11/17/2020 19:56:02 PAGE 1   
+
+
+C51 COMPILER V9.01, COMPILATION OF MODULE MASTER
+OBJECT MODULE PLACED IN master.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE master.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          #include <reg51.h>
+   2          #include <lcd.h>
+   3          //buttons
+   4          sbit panleft = P1^3;
+   5          sbit panright = P1^2;
+   6          sbit tiltdown = P1^1;
+   7          sbit tiltup = P1^0;
+   8          sbit stop = P1^4;
+   9          sbit RS485en=P3^2;
+  10          
+  11          int data_count=0;
+  12          int frameSize=7; //madhesia e frame-it. Pelco-D 7-byte
+  13          
+  14          //Frames 
+  15          unsigned char leftFrame[]={0xFF,0x01,0x00,0x04,0x3F,0x00}; // sinjali per transmetim. pan left high speed
+  16          unsigned char rightFrame[]={0xFF,0x01,0x00,0x02,0x3F,0x00}; //                                              pan right high speed
+  17          unsigned char stopFrame[]={0xFF,0x01,0x00,0x00,0x00,0x00};       // Stop all actions (Pan / Tilt / Zoom / Iris 
+             -etj.)
+  18          unsigned char upFrame[]={0xFF,0x01,0x00,0x08,0x00,0x20};         //                                                 tilt up medium speed
+  19          unsigned char downFrame[]={0xFF,0x01,0x00,0x10,0x00,0x20};       //                                                 tilt down medium speed
+  20          //funksioni per llogaritje te checksum
+  21          unsigned char checksum(unsigned char frame[]);
+  22          //funksioni per dergim te frame-it
+  23          void sendframe(unsigned char frame[]);
+  24          //funksioni per delay
+  25          void Delay(unsigned int itime);
+  26          // Inicializimi i portit serik
+  27          void SerialInit()
+  28          {
+  29   1      TMOD=0x20; // zgjedhja e Timer 1, ne modin 8bit auto reload.
+  30   1      TH1=0xFD; // vendosja e baud rate = 9600
+  31   1      SCON=0x50; // vendosja e 8bit Control reg i cili kontrollon SBUF me RC5, 8 bit data, 1 stop bit , 1 start 
+             -bit
+  32   1      TR1=1; // startimi i timerit
+  33   1      //EA  = 1;// Enable global interrupt 
+  34   1      //ES = 1; // Enable serial interrupt
+  35   1      }
+  36          
+  37          void main()
+  38          {
+  39   1      SerialInit();
+  40   1      Lcd8_Init();     
+  41   1      while(1)
+  42   1      {
+  43   2      if(panleft==0)
+  44   2      {
+  45   3              sendframe(leftFrame); 
+  46   3              Lcd8_Clear();    //fshirja e LCD pas cdo marrje te informatave
+  47   3              Lcd8_Set_Cursor(1,1);
+  48   3              Lcd8_Write_String("Left");
+  49   3      }
+  50   2      else if(panright==0)
+  51   2      {
+  52   3              sendframe(rightFrame);
+  53   3              Lcd8_Clear();
+C51 COMPILER V9.01   MASTER                                                                11/17/2020 19:56:02 PAGE 2   
+
+  54   3              Lcd8_Set_Cursor(1,1);
+  55   3              Lcd8_Write_String("Right");
+  56   3      }
+  57   2      else if(tiltup==0)
+  58   2      {
+  59   3              sendframe(upFrame);
+  60   3              Lcd8_Clear();
+  61   3              Lcd8_Set_Cursor(1,1);
+  62   3              Lcd8_Write_String("Up");
+  63   3      }
+  64   2      else if(tiltdown==0)
+  65   2      {
+  66   3              sendframe(downFrame);
+  67   3              Lcd8_Clear();
+  68   3              Lcd8_Set_Cursor(1,1);
+  69   3              Lcd8_Write_String("Down");
+  70   3      }
+  71   2      
+  72   2      else if(stop==0)
+  73   2      {
+  74   3              sendframe(stopFrame);
+  75   3              Lcd8_Clear();
+  76   3              Lcd8_Set_Cursor(1,1);
+  77   3              Lcd8_Write_String("Stopped");
+  78   3      } 
+  79   2      }
+  80   1      }
+  81          //funksioni per llogaritje te checksum
+  82           unsigned char checksum(unsigned char frame[])
+  83          {
+  84   1              unsigned char sum;
+  85   1              int i;
+  86   1              sum=0x00;
+  87   1              for(i=frameSize-2;i>=frameSize-6;i--)
+  88   1              {
+  89   2                       sum=sum+frame[i];
+  90   2              }
+  91   1              return sum%0x100;
+  92   1      
+  93   1      }
+  94          //funksioni per dergim te paketit
+  95           void sendframe(unsigned char frame[])
+  96          {
+  97   1               while(data_count<frameSize-1)//frameSize-1=6
+  98   1               {
+  99   2               SBUF=frame[data_count++];//ngarkimi i byte ne regjistrin SBUF
+ 100   2               while(TI==0);                    //pret derisa te transmetohet stop bit-i
+ 101   2           TI=0;                                        //e fshijme TI flag
+ 102   2               }
+ 103   1               SBUF=checksum(frame);
+ 104   1               while(TI==0);
+ 105   1           TI=0;
+ 106   1               data_count=0;
+ 107   1      }
+ 108          //funksioni per delay
+ 109          void Delay(unsigned int itime) {
+ 110   1        unsigned int i,j;
+ 111   1        for (i=0; i<itime; i++)
+ 112   1          for (j=0; j<1275; j++); // 1ms delay
+ 113   1      }
+
+
+C51 COMPILER V9.01   MASTER                                                                11/17/2020 19:56:02 PAGE 3   
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    583    ----
+   CONSTANT SIZE    =     27    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     34      11
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
